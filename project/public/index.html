@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Шашки Онлайн</title>
+    <style>
+        * {
+            user-select: none;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .game-container {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .game-info {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .player-turn {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .reset-button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 30px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .reset-button:hover {
+            background: #45a049;
+        }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(8, 70px);
+            grid-template-rows: repeat(8, 70px);
+            gap: 0;
+            border: 2px solid #333;
+        }
+        .cell {
+            width: 70px;
+            height: 70px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .cell:hover {
+            filter: brightness(0.95);
+        }
+        .cell.white {
+            background-color: #f0d9b5;
+        }
+        .cell.black {
+            background-color: #b58863;
+        }
+        .cell.selected {
+            box-shadow: inset 0 0 0 4px #ffeb3b;
+        }
+        .piece {
+            width: 55px;
+            height: 55px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 35px;
+            font-weight: bold;
+            transition: all 0.2s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .piece.white-piece {
+            background: radial-gradient(circle at 35% 35%, #fff, #e0e0e0);
+            border: 2px solid #ccc;
+        }
+        .piece.black-piece {
+            background: radial-gradient(circle at 35% 35%, #555, #222);
+            border: 2px solid #444;
+        }
+        .piece.king::after {
+            content: "👑";
+            position: absolute;
+            font-size: 28px;
+        }
+        .piece {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="game-info">
+            <div class="player-turn" id="playerTurn">🎮 Ход: Белые</div>
+            <button class="reset-button" onclick="resetGame()">🔄 Новая игра</button>
+        </div>
+        <div class="board" id="board"></div>
+    </div>
+
+    <script>
+        let updateInterval = null;
+
+        async function apiCall(endpoint, method = 'GET', data = null) {
+            const options = { method: method };
+            if (data) {
+                options.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+                options.body = new URLSearchParams(data).toString();
+            }
+            try {
+                const response = await fetch(endpoint, options);
+                return await response.json();
+            } catch (error) {
+                console.error('API Error:', error);
+                return null;
+            }
+        }
+
+        async function updateGameState() {
+            const state = await apiCall('/api/game_state');
+            if (state) {
+                renderBoard(state);
+                const playerTurn = document.getElementById('playerTurn');
+                if (!state.gameOver) {
+                    playerTurn.innerHTML = state.currentPlayer === 1 ? '🎮 Ход: Белые' : '🎮 Ход: Черные';
+                } else {
+                    const winner = state.winner;
+                    playerTurn.innerHTML = winner === 1 ? '🏆 Белые победили!' : '🏆 Черные победили!';
+                }
+            }
+        }
+
+        async function handleCellClick(row, col) {
+            const state = await apiCall('/api/game_state');
+            if (!state || state.gameOver) return;
+            
+            if (state.pieceSelected) {
+                await apiCall('/api/move_selected', 'POST', { row: row, col: col });
+                await updateGameState();
+            } else {
+                const piece = state.board[row][col];
+                if (piece !== 0) {
+                    const isCorrectPlayer = (piece === 1 || piece === 3) ? state.currentPlayer === 1 : state.currentPlayer === 2;
+                    if (isCorrectPlayer) {
+                        await apiCall('/api/select', 'POST', { row: row, col: col });
+                        await updateGameState();
+                    }
+                }
+            }
+        }
+
+        async function resetGame() {
+            await apiCall('/api/reset', 'POST');
+            await updateGameState();
+        }
+
+        function renderBoard(state) {
+            const boardElement = document.getElementById('board');
+            boardElement.innerHTML = '';
+            
+            for (let i = 0; i < 8; i++) {
+                for (let j = 0; j < 8; j++) {
+                    const cell = document.createElement('div');
+                    const isDark = (i + j) % 2 === 1;
+                    cell.className = `cell ${isDark ? 'black' : 'white'}`;
+                    
+                    if (state.selectedRow === i && state.selectedCol === j) {
+                        cell.classList.add('selected');
+                    }
+                    
+                    const piece = state.board[i][j];
+                    if (piece !== 0) {
+                        const pieceDiv = document.createElement('div');
+                        pieceDiv.className = `piece ${piece === 1 || piece === 3 ? 'white-piece' : 'black-piece'}`;
+                        if (piece === 3 || piece === 4) {
+                            pieceDiv.classList.add('king');
+                        }
+                        cell.appendChild(pieceDiv);
+                    }
+                    
+                    cell.onclick = (function(row, col) {
+                        return function() { handleCellClick(row, col); };
+                    })(i, j);
+                    
+                    boardElement.appendChild(cell);
+                }
+            }
+        }
+
+        updateGameState();
+        updateInterval = setInterval(updateGameState, 500);
+    </script>
+</body>
+</html>

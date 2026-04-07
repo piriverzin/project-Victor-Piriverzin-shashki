@@ -1,0 +1,4 @@
+checkers_server
+*.o
+*.exe
+.DS_Store
